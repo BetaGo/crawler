@@ -11,7 +11,7 @@ main()
 
 const sleep = (time: number) => {
     return new Promise((resolve, reject) => {
-        setTimeout(resolve(), time)
+        setTimeout(resolve, time)
     })
 }
 
@@ -83,11 +83,16 @@ async function main() {
             }
         })
         const nextPageURL = await curPage.$("#s_position_list > div.item_con_pager > div > a:nth-last-child(1)")
-        await sleep(6000 + Math.random() * 10000)
-        await Promise.all([
-            nextPageURL.click(),
-            curPage.waitForNavigation(),
-        ])
+        await sleep(3000 + Math.random() * 8000)
+        try {
+            await Promise.all([
+                nextPageURL.click(),
+                curPage.waitForNavigation(),
+            ])
+        } catch (error) {
+            i = 0
+            break
+        }
         i--
     }
     await browser.close()
