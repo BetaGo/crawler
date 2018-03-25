@@ -2,6 +2,7 @@ import mongoose from "mongoose"
 
 export type JobModel = mongoose.Document & {
     name: string,
+    position_id: number,
     address: string,
     salary: [number, number],
     experience: string,
@@ -14,6 +15,7 @@ export type JobModel = mongoose.Document & {
 
 const jobSchema = new mongoose.Schema({
     name: String,
+    position_id: Number,
     address: String,
     salary: [Number, Number],
     experience: String,

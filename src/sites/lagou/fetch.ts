@@ -19,23 +19,23 @@ const getPageJobs = async (page: puppeteer.Page) => {
     const jobInfo = await page.evaluate((positionSelector: string) => {
         const positionArr: Array<Partial<JobModel>> = []
         document.querySelectorAll(positionSelector).forEach((position: HTMLElement) => {
-            const nameElement = position.querySelector(".list_item_top > div.position > div.p_top > a > h3")
-            const name = nameElement.innerHTML
+            const {
+                positionid,
+                salary,
+                company,
+                positionname,
+            } = position.dataset
 
             const addressElement = position.querySelector(".list_item_top > div.position > div.p_top > a > span > em")
             const address = addressElement.innerHTML
 
             const salaryExpEduElement: HTMLElement = position.querySelector(".list_item_top > div.position > div.p_bot > div")
             const arr = salaryExpEduElement.innerText.split(" ")
-            const salary = arr[0].split("-").map(s => parseInt(s, 10)) as [number, number]
             const experience = arr[1] || ""
             const education = arr[3] || ""
 
             const tagsElement = [...position.querySelectorAll(".list_item_bot > div.li_b_l > span")]
             const tags = tagsElement.map(item => item.innerHTML)
-
-            const companyElement = position.querySelector(".list_item_top > div.company > div.company_name > a")
-            const company = companyElement.innerHTML
 
             const companyIndustryElement = position.querySelector(".list_item_top > div.company > div.industry")
             const company_industry = companyIndustryElement.innerHTML.trim()
@@ -44,9 +44,10 @@ const getPageJobs = async (page: puppeteer.Page) => {
             const company_description = companyDescriptionElement.innerHTML.trim()
 
             positionArr.push({
-                name,
+                position_id: Number(positionid),
+                name: positionname,
                 address,
-                salary,
+                salary: salary.split("-").map(item => parseInt(item, 10)) as [number, number],
                 experience,
                 education,
                 tags,
@@ -69,34 +70,26 @@ async function main() {
 
     const curPage = await browser.newPage()
     await curPage.goto("https://www.lagou.com/zhaopin/webqianduan/?labelWords=label")
-    const curPageJobs = await getPageJobs(curPage)
-    // curPageJobs.forEach((jobValue: {}) => {
-    //     const job = new JobModal(jobValue)
-    //     try {
-    //         job.save()
-    //     } catch (error) {
-    //         console.log(error)
-    //     }
-    // })
-    const nextPageURL = await curPage.$("#s_position_list > div.item_con_pager > div > a:nth-last-child(1)")
-    await sleep(6000)
-    await Promise.all([
-        nextPageURL.click(),
-        curPage.waitForNavigation(),
-    ])
-
-    console.log(curPage.url())
-    // const pages = await browser.pages()
-    // curPage = pages[pages.length - 1]
-    // curPageJobs = await getPageJobs(curPage)
-    // curPageJobs.forEach((jobValue: {}) => {
-    //     const job = new JobModal(jobValue)
-    //     try {
-    //         job.save()
-    //     } catch (error) {
-    //         console.log(error)
-    //     }
-    // })
-
+    let i = 30
+    while ( i > 0) {
+        const curPageJobs = await getPageJobs(curPage)
+        curPageJobs.forEach( async (jobValue: Partial<JobModel>) => {
+            const job = await JobModal.findOne({position_id: jobValue.position_id })
+            if (job) {
+                await job.update(jobValue)
+            } else {
+                const newJob = new JobModal(jobValue)
+                await newJob.save()
+            }
+        })
+        const nextPageURL = await curPage.$("#s_position_list > div.item_con_pager > div > a:nth-last-child(1)")
+        await sleep(6000 + Math.random() * 10000)
+        await Promise.all([
+            nextPageURL.click(),
+            curPage.waitForNavigation(),
+        ])
+        i--
+    }
     await browser.close()
+    mongoose.disconnect()
 }
