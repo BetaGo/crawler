@@ -6,6 +6,7 @@ import fs from "fs"
 mongoose.connect("mongodb://localhost/lagou")
 
 const POSITION_ITEM = "#s_position_list > ul > li"
+const NEXT_PAGE_ITEM = "#s_position_list > div.item_con_pager > div > a:nth-last-child(1)"
 
 main()
 
@@ -13,6 +14,14 @@ const sleep = (time: number) => {
     return new Promise((resolve, reject) => {
         setTimeout(resolve, time)
     })
+}
+
+const getNextPageClassName = async (page: puppeteer.Page) => {
+    const nextPageClassName: string = await page.evaluate((selector: string) => {
+        const item = document.querySelector(selector)
+        return item.className
+    }, NEXT_PAGE_ITEM)
+    return nextPageClassName
 }
 
 const getPageJobs = async (page: puppeteer.Page) => {
@@ -69,9 +78,14 @@ async function main() {
     })
 
     const curPage = await browser.newPage()
+    // await curPage.setCookie({name: ''})
     await curPage.goto("https://www.lagou.com/zhaopin/webqianduan/?labelWords=label")
-    let i = 30
-    while ( i > 0) {
+
+    while (true) {
+        const nextPageClassName = await getNextPageClassName(curPage)
+        if (nextPageClassName.includes("disable")) {
+            break
+        }
         const curPageJobs = await getPageJobs(curPage)
         curPageJobs.forEach( async (jobValue: Partial<JobModel>) => {
             const job = await JobModal.findOne({position_id: jobValue.position_id })
@@ -82,18 +96,17 @@ async function main() {
                 await newJob.save()
             }
         })
+
         const nextPageURL = await curPage.$("#s_position_list > div.item_con_pager > div > a:nth-last-child(1)")
-        await sleep(3000 + Math.random() * 8000)
+        await sleep(1000 + Math.random() * 5000)
         try {
             await Promise.all([
                 nextPageURL.click(),
                 curPage.waitForNavigation(),
             ])
         } catch (error) {
-            i = 0
             break
         }
-        i--
     }
     await browser.close()
     mongoose.disconnect()
