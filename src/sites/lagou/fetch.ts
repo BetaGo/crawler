@@ -1,12 +1,20 @@
 import puppeteer from "puppeteer"
 import mongoose from "mongoose"
 import JobModal, { JobModel } from "../../models/job"
-import fs from "fs"
 
 mongoose.connect("mongodb://localhost/lagou")
 
 const POSITION_ITEM = "#s_position_list > ul > li"
 const NEXT_PAGE_ITEM = "#s_position_list > div.item_con_pager > div > a:nth-last-child(1)"
+const city = [
+    "全国",
+    "北京",
+    "上海",
+    "杭州",
+    "广州",
+    "深圳",
+    "成都",
+]
 
 main()
 
@@ -24,8 +32,8 @@ const getNextPageClassName = async (page: puppeteer.Page) => {
     return nextPageClassName
 }
 
-const getPageJobs = async (page: puppeteer.Page) => {
-    const jobInfo = await page.evaluate((positionSelector: string) => {
+const getPageJobs = async (page: puppeteer.Page, city = "") => {
+    const jobInfo = await page.evaluate((positionSelector: string, city = "") => {
         const positionArr: Array<Partial<JobModel>> = []
         document.querySelectorAll(positionSelector).forEach((position: HTMLElement) => {
             const {
@@ -55,6 +63,7 @@ const getPageJobs = async (page: puppeteer.Page) => {
             positionArr.push({
                 position_id: Number(positionid),
                 name: positionname,
+                city,
                 address,
                 salary: salary.split("-").map(item => parseInt(item, 10)) as [number, number],
                 experience,
@@ -67,7 +76,7 @@ const getPageJobs = async (page: puppeteer.Page) => {
         })
 
         return positionArr
-    }, POSITION_ITEM)
+    }, POSITION_ITEM, city)
     return jobInfo
 }
 
@@ -77,37 +86,45 @@ async function main() {
         headless: false
     })
 
-    const curPage = await browser.newPage()
-    // await curPage.setCookie({name: ''})
-    await curPage.goto("https://www.lagou.com/zhaopin/webqianduan/?labelWords=label")
-
-    while (true) {
-        const nextPageClassName = await getNextPageClassName(curPage)
-        if (nextPageClassName.includes("disable")) {
-            break
-        }
-        const curPageJobs = await getPageJobs(curPage)
-        curPageJobs.forEach( async (jobValue: Partial<JobModel>) => {
-            const job = await JobModal.findOne({position_id: jobValue.position_id })
-            if (job) {
-                await job.update(jobValue)
-            } else {
-                const newJob = new JobModal(jobValue)
-                await newJob.save()
-            }
+    for (let i = 0; i < city.length; i++) {
+        const curPage = await browser.newPage()
+        await curPage.setCookie({
+            name: "index_location_city",
+            value: encodeURI(city[i]),
+            domain: ".lagou.com",
+            path: "/",
         })
+        await curPage.goto("https://www.lagou.com/zhaopin/webqianduan/?labelWords=label")
 
-        const nextPageURL = await curPage.$("#s_position_list > div.item_con_pager > div > a:nth-last-child(1)")
-        await sleep(1000 + Math.random() * 5000)
-        try {
-            await Promise.all([
-                nextPageURL.click(),
-                curPage.waitForNavigation(),
-            ])
-        } catch (error) {
-            break
+        while (true) {
+            const nextPageClassName = await getNextPageClassName(curPage)
+            if (nextPageClassName.includes("disable")) {
+                break
+            }
+            const curPageJobs = await getPageJobs(curPage, city[i])
+            curPageJobs.forEach( async (jobValue: Partial<JobModel>) => {
+                const job = await JobModal.findOne({position_id: jobValue.position_id })
+                if (job) {
+                    await job.update(jobValue)
+                } else {
+                    const newJob = new JobModal(jobValue)
+                    await newJob.save()
+                }
+            })
+
+            const nextPageURL = await curPage.$("#s_position_list > div.item_con_pager > div > a:nth-last-child(1)")
+            await sleep(1000 + Math.random() * 5000)
+            try {
+                await Promise.all([
+                    nextPageURL.click(),
+                    curPage.waitForNavigation(),
+                ])
+            } catch (error) {
+                break
+            }
         }
     }
+
     await browser.close()
     mongoose.disconnect()
 }
